@@ -11,6 +11,10 @@ set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY "${PROJECT_BINARY_DIR}")
 set(CMAKE_LIBRARY_OUTPUT_DIRECTORY "${PROJECT_BINARY_DIR}")
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${PROJECT_BINARY_DIR}")
 
+if(MSVC)
+    add_definitions(/D_USE_MATH_DEFINES)
+endif ()
+
 set(Eigen3_DIR D:/soft/eigen-prefix/share/eigen3/cmake)
 set(VTK_DIR D:/soft/vtk-prefix/lib/cmake/vtk-9.2/)
 set(TBB_DIR D:/One-API/tbb/latest/lib/cmake/tbb)
