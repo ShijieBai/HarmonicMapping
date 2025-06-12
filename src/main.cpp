@@ -8,5 +8,7 @@ int main() {
 
 	mapping.find_corner_and_bnd_nodes();
 
+	mapping.map_boundary();
+
 	return 0;
 }

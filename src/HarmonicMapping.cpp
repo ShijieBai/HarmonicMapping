@@ -150,7 +150,11 @@ namespace Mapping {
         int n_corner = corners_.size();
         std::stack<int> stack;
         std::unordered_set<int> visited;
-        stack.push(corners_[0]);
+        auto min_it =
+            std::min_element(corners_.begin(), corners_.end(), [this](const int &a, const int &b) {
+                return mesh_.nodes_[a].squaredNorm() < mesh_.nodes_[b].squaredNorm();
+            });
+        stack.push(*min_it); // 以角点最小点为起始点
         std::unordered_set<int> corner_set;
         corner_set.insert(corners_.begin(), corners_.end());
         corners_.clear();
@@ -181,5 +185,68 @@ namespace Mapping {
         }
     }
 
-    void HarmonicMapping::map_UV() {}
+    void HarmonicMapping::map_boundary() {
+        std::vector<Vector2d> corner_uv;
+        corner_uv.reserve(corners_.size());
+        corner_uv.emplace_back(Vector2d{0, 0});
+        corner_uv.emplace_back(Vector2d{0, 1});
+        corner_uv.emplace_back(Vector2d{1, 1});
+        corner_uv.emplace_back(Vector2d{1, 0});
+
+        int n_path = bnd_nodes_.size();
+        bnd_uv_.resize(n_path);
+
+        for (int k = 0; k < n_path; k++) {
+            auto &path = bnd_nodes_[k];
+            int pre_index{corners_[k]};
+            int nn = path.size();
+            std::vector<double> lengths;
+            lengths.resize(nn);
+            for (int i = 0; i < nn; i++) {
+                if (i == 0) {
+                    lengths[i] = (mesh_.nodes_[path[i]] - mesh_.nodes_[pre_index]).norm();
+                } else {
+                    lengths[i] = lengths[i - 1] + (mesh_.nodes_[path[i]] - mesh_.nodes_[pre_index]).norm();
+                }
+                pre_index = path[i];
+            }
+
+            auto &path_uv = bnd_uv_[k];
+            path_uv.resize(nn);
+            auto &path_length = lengths.back();
+            for (int i = 0; i < nn; i++) {
+                switch (k) {
+                case 0: {
+                    path_uv[i] = {0, lengths[i] / path_length};
+                    break;
+                }
+                case 1: {
+                    path_uv[i] = {lengths[i] / path_length, 1};
+                    break;
+                }
+                case 2: {
+                    path_uv[i] = {1, lengths[i] / path_length};
+                    break;
+                }
+                case 3: {
+                    path_uv[i] = {lengths[i] / path_length, 0};
+                    break;
+                }
+                default: {
+                    std::cerr << "Error: index out of scope " << std::endl;
+                }
+                }
+            }
+        }
+    }
+
+    void HarmonicMapping::map_quad() {
+
+
+
+
+
+
+    }
+
 } // namespace Mapping
