@@ -4,6 +4,18 @@
 
 namespace Mapping {
 
+    Node::Node(Vector3d &coord) : coord_(coord) {}
+
+    bool Edge::operator<(const Edge &other) const {
+        return to_ < other.to_;
+    }
+
+    bool Edge::operator==(const Edge &other) const {
+        return to_ == other.to_;
+    }
+
+    Edge::Edge(const int to) : to_(to) {}
+
     void Mesh::read_obj(const std::string &obj_file) {
         std::ifstream file(obj_file);
         if (!file.is_open()) {
@@ -62,7 +74,7 @@ namespace Mapping {
         int nnodes = nodes_.size();
         for (int i = 0; i < nnodes; i++) {
             fileOBJ << "v ";
-            for (auto &p : nodes_[i]) {
+            for (auto &p : nodes_[i].coord_) {
                 fileOBJ << p << " ";
             }
             fileOBJ << std::endl;
@@ -115,6 +127,8 @@ namespace Mapping {
             if (entry.second == 1) {
                 bnd_nodes.insert(entry.first.first);
                 bnd_nodes.insert(entry.first.second);
+                mesh_.nodes_[entry.first.first].is_boundary_ = true;
+                mesh_.nodes_[entry.first.second].is_boundary_ = true;
             }
         }
 
@@ -138,8 +152,8 @@ namespace Mapping {
             int vPrev = neighbors[0];
             int vNext = neighbors[1];
 
-            Vector3d vecPrev = mesh_.nodes_[vPrev] - mesh_.nodes_[v];
-            Vector3d vecNext = mesh_.nodes_[vNext] - mesh_.nodes_[v];
+            Vector3d vecPrev = mesh_.nodes_[vPrev].coord_ - mesh_.nodes_[v].coord_;
+            Vector3d vecNext = mesh_.nodes_[vNext].coord_ - mesh_.nodes_[v].coord_;
 
             double angle = acos(vecPrev.normalized().dot(vecNext.normalized())) * (180.0 / M_PI);
             if (angle < threshold) {
@@ -152,7 +166,7 @@ namespace Mapping {
         std::unordered_set<int> visited;
         auto min_it =
             std::min_element(corners_.begin(), corners_.end(), [this](const int &a, const int &b) {
-                return mesh_.nodes_[a].squaredNorm() < mesh_.nodes_[b].squaredNorm();
+                return mesh_.nodes_[a].coord_.squaredNorm() < mesh_.nodes_[b].coord_.squaredNorm();
             });
         stack.push(*min_it); // 以角点最小点为起始点
         std::unordered_set<int> corner_set;
@@ -186,12 +200,11 @@ namespace Mapping {
     }
 
     void HarmonicMapping::map_boundary() {
-        std::vector<Vector2d> corner_uv;
-        corner_uv.reserve(corners_.size());
-        corner_uv.emplace_back(Vector2d{0, 0});
-        corner_uv.emplace_back(Vector2d{0, 1});
-        corner_uv.emplace_back(Vector2d{1, 1});
-        corner_uv.emplace_back(Vector2d{1, 0});
+        corner_uv_.reserve(corners_.size());
+        corner_uv_.emplace_back(Vector2d{0, 0});
+        corner_uv_.emplace_back(Vector2d{0, 1});
+        corner_uv_.emplace_back(Vector2d{1, 1});
+        corner_uv_.emplace_back(Vector2d{1, 0});
 
         int n_path = bnd_nodes_.size();
         bnd_uv_.resize(n_path);
@@ -204,9 +217,10 @@ namespace Mapping {
             lengths.resize(nn);
             for (int i = 0; i < nn; i++) {
                 if (i == 0) {
-                    lengths[i] = (mesh_.nodes_[path[i]] - mesh_.nodes_[pre_index]).norm();
+                    lengths[i] = (mesh_.nodes_[path[i]].coord_ - mesh_.nodes_[pre_index].coord_).norm();
                 } else {
-                    lengths[i] = lengths[i - 1] + (mesh_.nodes_[path[i]] - mesh_.nodes_[pre_index]).norm();
+                    lengths[i] = lengths[i - 1] +
+                                 (mesh_.nodes_[path[i]].coord_ - mesh_.nodes_[pre_index].coord_).norm();
                 }
                 pre_index = path[i];
             }
@@ -241,12 +255,64 @@ namespace Mapping {
     }
 
     void HarmonicMapping::map_quad() {
+        // build the nodes-edge and edge-ele relationship
+        std::map<int, std::vector<Edge>> node_edges_map;
+        std::map<std::pair<int, int>, std::set<int>> edge_eles_map;
+        int nele = mesh_.elements_.size();
+        for (int k = 0; k < nele; k++) {
+            auto &ele = mesh_.elements_[k];
+            for (int i = 0; i < 3; ++i) {
+                int v0 = ele[i];
+                int v1 = ele[(i + 1) % 3];
+                auto edge = (v0 < v1) ? std::make_pair(v0, v1) : std::make_pair(v1, v0);
+                node_edges_map[v0].emplace_back(v1);
+                node_edges_map[v1].emplace_back(v0);
+                edge_eles_map[edge].insert(k);
+            }
+        }
+
+        // remove duplicates
+        for (auto &[index, edges] : node_edges_map) {
+            std::sort(edges.begin(), edges.end());
+            auto last = std::unique(edges.begin(), edges.end());
+            edges.erase(last, edges.end());
+        }
+
+        // cal the weight for every internal node neighbor edges
+        int nnodes = mesh_.nodes_.size();       
+        for (int i = 0; i < nnodes; i++) {
+            auto &node = mesh_.nodes_[i];
+            if (node.is_boundary_) {
+                continue;
+            }
+            double sum_weight{};
+            for (auto &edge : node_edges_map[i]) {
+                auto edge_p = std::make_pair(i, edge.to_);
+                const auto &eles = edge_eles_map[edge_p];
+                cal_weight(i, edge, eles);
+                sum_weight += edge.weight_;
+            }
+
+            for (auto &edge : node_edges_map[i]) {
+                edge.weight_ /= sum_weight;
+            }
+        }
+
+        // iteration for internal nodes in uv space
+
+
+
+    }
+
+    void HarmonicMapping::cal_weight(const int p, Edge &edge, const std::set<int> &eles) {
+        for (auto index : eles) {
+            auto &ele = mesh_.elements_[index];
 
 
 
 
-
-
+            
+        }
     }
 
 } // namespace Mapping

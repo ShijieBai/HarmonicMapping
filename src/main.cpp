@@ -10,5 +10,7 @@ int main() {
 
 	mapping.map_boundary();
 
+	mapping.map_quad();
+
 	return 0;
 }
