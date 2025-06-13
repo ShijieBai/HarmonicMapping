@@ -59,7 +59,7 @@ namespace Mapping {
 
         void map_quad();
 
-        void cal_weight(const int p, Edge &edge, const std::set<int> &eles);
+        void cal_edge_weight(const int p, Edge &edge, const std::set<int> &eles);
     };
 
 } // namespace Mapping

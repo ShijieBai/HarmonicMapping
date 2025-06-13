@@ -129,7 +129,7 @@ namespace Mapping {
         for (int i = 0; i < nele; i++) {
             fileOBJ << "f ";
             for (auto &id : elements_[i]) {
-                fileOBJ << id + 1 << " ";
+                fileOBJ << id + 1 << "/" << id + 1 << " ";
             }
             fileOBJ << std::endl;
         }
@@ -254,18 +254,28 @@ namespace Mapping {
         for (int k = 0; k < n_path; k++) {
             auto &path = bnd_nodes_[k];
             int pre_index{corners_[k]};
+            int end_index{};
+            if (k == n_path - 1) {
+                end_index = corners_[0];
+            } else {
+                end_index = corners_[k + 1];
+            }
             int nn = path.size();
             std::vector<double> lengths;
             lengths.resize(nn);
             for (int i = 0; i < nn; i++) {
                 if (i == 0) {
                     lengths[i] = (mesh_.nodes_[path[i]].coord_ - mesh_.nodes_[pre_index].coord_).norm();
+
                 } else {
                     lengths[i] = lengths[i - 1] +
                                  (mesh_.nodes_[path[i]].coord_ - mesh_.nodes_[pre_index].coord_).norm();
                 }
                 pre_index = path[i];
             }
+
+            lengths.emplace_back(lengths.back() +
+                                 (mesh_.nodes_[end_index].coord_ - mesh_.nodes_[pre_index].coord_).norm());
 
             auto &path_length = lengths.back();
             for (int i = 0; i < nn; i++) {
@@ -279,11 +289,11 @@ namespace Mapping {
                     break;
                 }
                 case 2: {
-                    mesh_.nodes_[path[i]].uv_ = {1, lengths[i] / path_length};
+                    mesh_.nodes_[path[i]].uv_ = {1, 1.0 - lengths[i] / path_length};
                     break;
                 }
                 case 3: {
-                    mesh_.nodes_[path[i]].uv_ = {lengths[i] / path_length, 0};
+                    mesh_.nodes_[path[i]].uv_ = {1.0 - lengths[i] / path_length, 0};
                     break;
                 }
                 default: {
@@ -325,19 +335,10 @@ namespace Mapping {
             if (node.is_boundary_) {
                 continue;
             }
-            double sum_weight{};
             for (auto &edge : node_edges_map[i]) {
                 auto edge_p = (i < edge.to_) ? std::make_pair(i, edge.to_) : std::make_pair(edge.to_, i);
                 const auto &eles = edge_eles_map[edge_p];
-                cal_weight(i, edge, eles);
-                sum_weight += std::abs(edge.weight_);
-            }
-
-            for (auto &edge : node_edges_map[i]) {
-                edge.weight_ /= sum_weight;
-                //if (std::isnan(edge.weight_)) {
-                //    std::cerr << "edge weight is nan" << std::endl;
-                //}
+                cal_edge_weight(i, edge, eles);
             }
         }
 
@@ -351,9 +352,12 @@ namespace Mapping {
                     continue;
                 }
                 Vector2d new_uv{0, 0};
+                double sum_weight{};
                 for (auto &edge : node_edges_map[i]) {
+                    sum_weight += edge.weight_;
                     new_uv += edge.weight_ * mesh_.nodes_[edge.to_].uv_;
                 }
+                new_uv = new_uv.array() / sum_weight;
                 // ensure the nv in the range 0-1
                 new_uv[0] = std::max(0.0, new_uv[0]);
                 new_uv[1] = std::max(0.0, new_uv[1]);
@@ -362,10 +366,10 @@ namespace Mapping {
                 node.uv_ = new_uv;
             }
             iter++;
-        }   
+        }
     }
 
-    void HarmonicMapping::cal_weight(const int A, Edge &edge, const std::set<int> &eles) {
+    void HarmonicMapping::cal_edge_weight(const int A, Edge &edge, const std::set<int> &eles) {
         auto &nodes = mesh_.nodes_;
         std::vector<double> thetas;
         for (auto index : eles) {
@@ -387,14 +391,14 @@ namespace Mapping {
             double b = (nodes[A].coord_ - nodes[C].coord_).norm();
             double c = (nodes[A].coord_ - nodes[B].coord_).norm();
 
-            double theta = acos((b * b + c * c - a * a) / (2 * b * c)) * (180.0 / M_PI);
+            double theta = acos((b * b + c * c - a * a) / (2 * b * c)) / 2.0;
             thetas.emplace_back(theta);
         }
         if (thetas.size() != 2) {
             std::cerr << "cal weight for internal edge!" << std::endl;
         }
         double length = (nodes[A].coord_ - nodes[edge.to_].coord_).norm();
-        edge.weight_ = (tan(thetas[0] / 2.0) + tan(thetas[1] / 2.0)) / length;
+        edge.weight_ = (tan(thetas[0]) + tan(thetas[1])) / length;
     }
 
 } // namespace Mapping
