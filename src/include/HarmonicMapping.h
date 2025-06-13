@@ -16,6 +16,7 @@ namespace Mapping {
 
     struct Node {
         Vector3d coord_{};
+        Vector2d uv_{0.5, 0.5};
         bool is_boundary_{};
         Node(Vector3d &coord);
     };
@@ -33,15 +34,13 @@ namespace Mapping {
         std::vector<VectorXi> elements_;
         void read_obj(const std::string &obj_file);
         void write_obj(const std::string &obj_file);
+        void write_uv_obj(const std::string &obj_file);
     };
 
     class HarmonicMapping {
         Mesh mesh_;
-        std::vector<std::vector<int>> bnd_nodes_{};
-        std::vector<int> corners_{};
-        std::vector<std::vector<Vector2d>> bnd_uv_{};
-        std::vector<Vector2d> corner_uv_{};
-
+        std::vector<std::vector<int>> bnd_nodes_{}; // interval between corners
+        std::vector<int> corners_{};  
     public:
         HarmonicMapping() = default;
 
@@ -50,6 +49,8 @@ namespace Mapping {
         void read_obj(const std::string &obj_file);
 
         void write_obj(const std::string &obj_file);
+
+        void write_uv_obj(const std::string &obj_file);
 
         void find_corner_and_bnd_nodes(const int threshold = 120);
 

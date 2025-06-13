@@ -97,12 +97,57 @@ namespace Mapping {
         fileOBJ.close();
     }
 
+    void Mesh::write_uv_obj(const std::string &obj_file) {
+        std::ofstream fileOBJ(obj_file.c_str(), std::ios::out);
+
+        fileOBJ << "# Object name" << std::endl;
+        fileOBJ << "o " << obj_file << std::endl;
+        fileOBJ << std::endl;
+
+        fileOBJ << "# Begin list of vertices" << std::endl;
+        int nnodes = nodes_.size();
+        for (int i = 0; i < nnodes; i++) {
+            fileOBJ << "v ";
+            for (auto &p : nodes_[i].coord_) {
+                fileOBJ << p << " ";
+            }
+            fileOBJ << std::endl;
+        }
+
+        fileOBJ << "# End list of vertices" << std::endl;
+        fileOBJ << std::endl;
+
+        fileOBJ << "# Begin list of vertices uv" << std::endl;
+        for (const auto &node : nodes_) {
+            fileOBJ << "vt " << node.uv_[0] << " " << node.uv_[1] << "\n";
+        }
+        fileOBJ << "# End list of vertices uv" << std::endl;
+        fileOBJ << std::endl;
+
+        fileOBJ << "# Begin list of faces" << std::endl;
+        int nele = elements_.size();
+        for (int i = 0; i < nele; i++) {
+            fileOBJ << "f ";
+            for (auto &id : elements_[i]) {
+                fileOBJ << id + 1 << " ";
+            }
+            fileOBJ << std::endl;
+        }
+        fileOBJ << "# End list of faces" << std::endl;
+        fileOBJ << std::endl;
+        fileOBJ.close();
+    }
+
     void HarmonicMapping::read_obj(const std::string &obj_file) {
         mesh_.read_obj(obj_file);
     }
 
     void HarmonicMapping::write_obj(const std::string &obj_file) {
         mesh_.write_obj(obj_file);
+    }
+
+    void HarmonicMapping::write_uv_obj(const std::string &obj_file) {
+        mesh_.write_uv_obj(obj_file);
     }
 
     void HarmonicMapping::find_corner_and_bnd_nodes(const int threshold) {
@@ -200,15 +245,12 @@ namespace Mapping {
     }
 
     void HarmonicMapping::map_boundary() {
-        corner_uv_.reserve(corners_.size());
-        corner_uv_.emplace_back(Vector2d{0, 0});
-        corner_uv_.emplace_back(Vector2d{0, 1});
-        corner_uv_.emplace_back(Vector2d{1, 1});
-        corner_uv_.emplace_back(Vector2d{1, 0});
+        mesh_.nodes_[corners_[0]].uv_ = Vector2d{0, 0};
+        mesh_.nodes_[corners_[1]].uv_ = Vector2d{0, 1};
+        mesh_.nodes_[corners_[2]].uv_ = Vector2d{1, 1};
+        mesh_.nodes_[corners_[3]].uv_ = Vector2d{1, 0};
 
         int n_path = bnd_nodes_.size();
-        bnd_uv_.resize(n_path);
-
         for (int k = 0; k < n_path; k++) {
             auto &path = bnd_nodes_[k];
             int pre_index{corners_[k]};
@@ -225,25 +267,23 @@ namespace Mapping {
                 pre_index = path[i];
             }
 
-            auto &path_uv = bnd_uv_[k];
-            path_uv.resize(nn);
             auto &path_length = lengths.back();
             for (int i = 0; i < nn; i++) {
                 switch (k) {
                 case 0: {
-                    path_uv[i] = {0, lengths[i] / path_length};
+                    mesh_.nodes_[path[i]].uv_ = {0, lengths[i] / path_length};
                     break;
                 }
                 case 1: {
-                    path_uv[i] = {lengths[i] / path_length, 1};
+                    mesh_.nodes_[path[i]].uv_ = {lengths[i] / path_length, 1};
                     break;
                 }
                 case 2: {
-                    path_uv[i] = {1, lengths[i] / path_length};
+                    mesh_.nodes_[path[i]].uv_ = {1, lengths[i] / path_length};
                     break;
                 }
                 case 3: {
-                    path_uv[i] = {lengths[i] / path_length, 0};
+                    mesh_.nodes_[path[i]].uv_ = {lengths[i] / path_length, 0};
                     break;
                 }
                 default: {
@@ -279,7 +319,7 @@ namespace Mapping {
         }
 
         // cal the weight for every internal node neighbor edges
-        int nnodes = mesh_.nodes_.size();       
+        int nnodes = mesh_.nodes_.size();
         for (int i = 0; i < nnodes; i++) {
             auto &node = mesh_.nodes_[i];
             if (node.is_boundary_) {
@@ -287,32 +327,74 @@ namespace Mapping {
             }
             double sum_weight{};
             for (auto &edge : node_edges_map[i]) {
-                auto edge_p = std::make_pair(i, edge.to_);
+                auto edge_p = (i < edge.to_) ? std::make_pair(i, edge.to_) : std::make_pair(edge.to_, i);
                 const auto &eles = edge_eles_map[edge_p];
                 cal_weight(i, edge, eles);
-                sum_weight += edge.weight_;
+                sum_weight += std::abs(edge.weight_);
             }
 
             for (auto &edge : node_edges_map[i]) {
                 edge.weight_ /= sum_weight;
+                //if (std::isnan(edge.weight_)) {
+                //    std::cerr << "edge weight is nan" << std::endl;
+                //}
             }
         }
 
         // iteration for internal nodes in uv space
-
-
-
+        int iter{};
+        int max_iter{20};
+        while (iter < max_iter) {
+            for (int i = 0; i < nnodes; i++) { // traversal internal nodes
+                auto &node = mesh_.nodes_[i];
+                if (node.is_boundary_) {
+                    continue;
+                }
+                Vector2d new_uv{0, 0};
+                for (auto &edge : node_edges_map[i]) {
+                    new_uv += edge.weight_ * mesh_.nodes_[edge.to_].uv_;
+                }
+                // ensure the nv in the range 0-1
+                new_uv[0] = std::max(0.0, new_uv[0]);
+                new_uv[1] = std::max(0.0, new_uv[1]);
+                new_uv[0] = std::min(1.0, new_uv[0]);
+                new_uv[1] = std::min(1.0, new_uv[1]);
+                node.uv_ = new_uv;
+            }
+            iter++;
+        }   
     }
 
-    void HarmonicMapping::cal_weight(const int p, Edge &edge, const std::set<int> &eles) {
+    void HarmonicMapping::cal_weight(const int A, Edge &edge, const std::set<int> &eles) {
+        auto &nodes = mesh_.nodes_;
+        std::vector<double> thetas;
         for (auto index : eles) {
             auto &ele = mesh_.elements_[index];
+            int B{}, C{};
+            if (ele[0] == A) {
+                B = ele[1];
+                C = ele[2];
+            } else if (ele[1] == A) {
+                B = ele[0];
+                C = ele[2];
+            } else if (ele[2] == A) {
+                B = ele[0];
+                C = ele[1];
+            } else {
+                throw("the index not int the triangle");
+            }
+            double a = (nodes[B].coord_ - nodes[C].coord_).norm();
+            double b = (nodes[A].coord_ - nodes[C].coord_).norm();
+            double c = (nodes[A].coord_ - nodes[B].coord_).norm();
 
-
-
-
-            
+            double theta = acos((b * b + c * c - a * a) / (2 * b * c)) * (180.0 / M_PI);
+            thetas.emplace_back(theta);
         }
+        if (thetas.size() != 2) {
+            std::cerr << "cal weight for internal edge!" << std::endl;
+        }
+        double length = (nodes[A].coord_ - nodes[edge.to_].coord_).norm();
+        edge.weight_ = (tan(thetas[0] / 2.0) + tan(thetas[1] / 2.0)) / length;
     }
 
 } // namespace Mapping

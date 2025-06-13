@@ -12,5 +12,7 @@ int main() {
 
 	mapping.map_quad();
 
+	mapping.write_uv_obj("D:/A-work/Harmonic_mapping/HarmonicMapping/IO/uv.obj");
+
 	return 0;
 }
